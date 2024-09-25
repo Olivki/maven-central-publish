@@ -68,13 +68,15 @@ tasks.getByName("shadowJar", ShadowJar::class) {
 tasks.getByName("publishPlugins").dependsOn("shadowJar")
 tasks.getByName("publishToMavenLocal").dependsOn("shadowJar")
 
+version = "0.1.0"
+
 gradlePlugin {
-    website = "https://github.com/Him188/maven-central-publish"
-    vcsUrl = "https://github.com/Him188/maven-central-publish"
+    website = "https://github.com/Olivki/maven-central-publish"
+    vcsUrl = "https://github.com/Olivki/maven-central-publish"
     testSourceSets(sourceSets.test.get())
     plugins {
         create("MavenCentralPublish") {
-            id = "me.him188.maven-central-publish"
+            id = "net.ormr.maven-central-publish"
             displayName = "Maven Central Publish"
             description = project.description
             implementationClass = "me.him188.maven.central.publish.gradle.MavenCentralPublishPlugin"
