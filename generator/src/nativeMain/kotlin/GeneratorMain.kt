@@ -6,9 +6,11 @@ import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToHexString
 import kotlinx.serialization.protobuf.ProtoBuf
-import me.him188.maven.central.publish.protocol.PublicationCredentials
+import kotlinx.serialization.protobuf.ProtoNumber
 import platform.posix.*
 
 private val SONATYPE_TXT_TIPS = """Please edit sonatype.txt following the rules:
@@ -19,6 +21,25 @@ private val SONATYPE_TXT_TIPS = """Please edit sonatype.txt following the rules:
                     |If you set package group, this will be the default when configuring projects. If you use only one group name with this account, you can set it for convenience.
                     |If not set, each time configuring project you need to set by `packageGroup = `
                 """.trimMargin()
+
+// because gradle refused to include the 'protocol' module
+@Suppress("EXPERIMENTAL_API_USAGE")
+@Serializable
+data class PublicationCredentials @OptIn(ExperimentalSerializationApi::class) constructor(
+    @ProtoNumber(1) val gpgPublicKey: String,
+    @ProtoNumber(2) val gpgPrivateKey: String,
+    @ProtoNumber(3) val sonatypeUsername: String,
+    @ProtoNumber(4) val sonatypePassword: String,
+) {
+    override fun toString(): String {
+        return """PublicationCredentials(
+                 |  gpgPublicKey='$gpgPublicKey', 
+                 |  gpgPrivateKey='$gpgPrivateKey', 
+                 |  sonatypeUsername='$sonatypeUsername', 
+                 |  sonatypePassword='$sonatypePassword',
+                 |)""".trimMargin()
+    }
+}
 
 fun main() = runPrintErrorMessage {
     println("Working dir: ${getCurrentDir() ?: "unknown"}")
@@ -117,6 +138,6 @@ private fun writeFile(path: String, text: String): Boolean {
 private fun getCurrentDir(): String? {
     memScoped {
         val byte = allocArray<ByteVar>(PATH_MAX)
-        return getcwd(byte, PATH_MAX.toULong())?.toKString()
+        return getcwd(byte, PATH_MAX)?.toKString()
     }
 }

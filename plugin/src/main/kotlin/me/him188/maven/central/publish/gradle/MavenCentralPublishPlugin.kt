@@ -4,10 +4,14 @@ package me.him188.maven.central.publish.gradle
 
 import groovy.util.Node
 import groovy.util.NodeList
-import io.github.karlatemp.publicationsign.PublicationSignPlugin
 import me.him188.maven.central.publish.gradle.tasks.CheckMavenCentralPublication
 import me.him188.maven.central.publish.gradle.tasks.CheckPublicationCredentials
 import me.him188.maven.central.publish.gradle.tasks.PreviewPublication
+import org.bouncycastle.bcpg.ArmoredInputStream
+import org.bouncycastle.openpgp.PGPObjectFactory
+import org.bouncycastle.openpgp.PGPPublicKeyRing
+import org.bouncycastle.openpgp.PGPUtil
+import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
@@ -18,65 +22,13 @@ import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.jvm.tasks.Jar
-import java.io.File
-
+import org.gradle.plugins.signing.SigningExtension
+import org.gradle.plugins.signing.SigningPlugin
 
 class MavenCentralPublishPlugin : Plugin<Project> {
-    companion object {
-        const val PLUGIN_ID: String = "me.him188.maven-central-publish"
-
-        inline fun Project.log(message: () -> String) {
-            if (logger.isInfoEnabled) {
-                logger.info("[MavenCentralPublish] " + message())
-            }
-        }
-
-        inline fun Project.log(level: LogLevel, message: () -> String) {
-            if (logger.isInfoEnabled) {
-                logger.log(level, "[MavenCentralPublish] " + message())
-            }
-        }
-
-        const val SECURITY_FILE_NAME = "KEEP_THIS_DIR_EMPTY.txt"
-
-        fun checkSecurityFile(workingDir: File) {
-            val securityFile = workingDir.resolve(SECURITY_FILE_NAME)
-            if (workingDir.exists()) {
-                if (securityFile.exists()) {
-                    // ok
-                } else {
-                    when (workingDir.listFiles()?.isEmpty()) {
-                        null -> error("Working dir '${workingDir}' is not a directory. Please change `mavenCentralPublish.workingDir`")
-                        false -> error("Working dir '${workingDir}' is not empty. Please change `mavenCentralPublish.workingDir`")
-                        true -> {}
-                    }
-                }
-            } else {
-                // ok
-            }
-            workingDir.mkdirs()
-            if (!workingDir.isDirectory) {
-                error("Failed to create directory '${workingDir.absolutePath}'. Please change `mavenCentralPublish.workingDir`")
-            }
-            securityFile.writeText(
-                """
-                        This file is created by the Gradle plugin '$PLUGIN_ID', and this directory is reserved for publication. 
-                        
-                        Everytime signing artifacts, all files in this directory will be removed without notice.
-                        Do not put any files into this directory, or use this directory for any other purposes, otherwise they will be deleted as stated above!
-                        
-                        If you are not using this directory for publication (i.e. when you changed the `workingDir`), you can delete this file.
-                        Without the existence of this security file, the plugin won't remove anything and will give you an error on startup.
-                        """
-                    .trimIndent()
-            )
-        }
-
-    }
-
     override fun apply(target: Project) {
         target.plugins.apply("maven-publish")
-        target.plugins.apply(PublicationSignPlugin::class.java)
+        target.plugins.apply(SigningPlugin::class.java)
 
         target.extensions.create(
             MavenCentralPublishExtension::class.java,
@@ -120,29 +72,22 @@ class MavenCentralPublishPlugin : Plugin<Project> {
 
                 log { "credentials: length=${credentials.toString().length}" }
 
-                log { "workingDir=${ext.workingDir.absolutePath}" }
+                extensions.configure(SigningExtension::class.java) { signing ->
+                    val keyId = String.format("%016X", getKeyId(credentials.gpgPublicKey)).takeLast(8)
+                    val privateKey = credentials
+                        .gpgPrivateKey
+                        .lineSequence()
+                        .filterNot { it.isBlank() }
+                        .filterNot { it.startsWith("-----") || it.startsWith("=") }
+                        .joinToString(separator = "")
+                    signing.useInMemoryPgpKeys(keyId, privateKey, "")
 
-                log { "Writing public key len=${credentials.gpgPublicKey.length} to \$workingDir/keys/key.pub." }
-                log { "Writing private key len=${credentials.gpgPrivateKey.length} to \$workingDir/keys/key.pri." }
-
-                val workingDir = ext.workingDir
-                val keysDir = workingDir.resolve("keys")
-                checkSecurityFile(workingDir)
-
-                keysDir.run {
-                    deleteRecursively() // clear caches
-                    mkdirs()
-                    resolve("key.pub").apply { createNewFile() }.writeText(credentials.gpgPublicKey)
-                    resolve("key.pri").apply { createNewFile() }.writeText(credentials.gpgPrivateKey)
-                }
-
-                extensions.configure(io.github.karlatemp.publicationsign.PublicationSignExtension::class.java) { sign ->
-                    sign.setupWorkflow { workflow ->
-                        workflow.workingDir = keysDir
-                        workflow.fastSetup(
-                            keysDir.resolve("key.pub").absolutePath,
-                            keysDir.resolve("key.pri").absolutePath,
-                        )
+                    project.extensions.configure(PublishingExtension::class.java) { ext ->
+                        ext.publications.all {
+                            if (it is MavenPublication) {
+                                signing.sign(it)
+                            }
+                        }
                     }
                 }
 
@@ -155,6 +100,16 @@ class MavenCentralPublishPlugin : Plugin<Project> {
                 registerPublication("mavenCentral", project, ext)
             }
         }
+    }
+
+    private fun getKeyId(asciiArmoredKey: String): Long {
+        val input = PGPUtil.getDecoderStream(ArmoredInputStream(asciiArmoredKey.byteInputStream()))
+        val objectFactory = PGPObjectFactory(input, JcaKeyFingerprintCalculator())
+        return generateSequence { objectFactory.nextObject() }
+            .filterIsInstance<PGPPublicKeyRing>()
+            .firstOrNull()
+            ?.publicKey
+            ?.keyID ?: throw IllegalArgumentException("No public key found in the provided PGP key block.")
     }
 
     private fun Project.publishPlatformArtifactsInRootModule(platformPublication: MavenPublication) {
@@ -190,7 +145,9 @@ class MavenCentralPublishPlugin : Plugin<Project> {
             }
 
         tasks.matching { it.name == "generatePomFileForKotlinMultiplatformPublication" }.configureEach { task ->
-            task.dependsOn("generatePomFileFor${platformPublication.name.capitalize()}Publication")
+            task.dependsOn("generatePomFileFor${platformPublication.name.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase() else it.toString()
+            }}Publication")
         }
     }
 
@@ -198,7 +155,6 @@ class MavenCentralPublishPlugin : Plugin<Project> {
         project: Project,
     ) = project.run {
         tasks.getOrRegister("sourcesJar", Jar::class.java) {
-            @Suppress("DEPRECATION")
             archiveClassifier.set("sources")
             val sourceSets = (project.extensions.getByName("sourceSets") as SourceSetContainer).matching {
                 it.name.endsWith("main", ignoreCase = true)
@@ -209,12 +165,10 @@ class MavenCentralPublishPlugin : Plugin<Project> {
         }
 
         tasks.getOrRegister("javadocJar", Jar::class.java) {
-            @Suppress("DEPRECATION")
             archiveClassifier.set("javadoc")
         }
 
         tasks.getOrRegister("samplessourcesJar", Jar::class.java) {
-            @Suppress("DEPRECATION")
             archiveClassifier.set("samplessources")
             val sourceSets = (project.extensions.getByName("sourceSets") as SourceSetContainer).matching {
                 it.name.endsWith("test", ignoreCase = true)
@@ -230,7 +184,6 @@ class MavenCentralPublishPlugin : Plugin<Project> {
         project: Project,
         ext: MavenCentralPublishExtension,
     ): Unit = project.run {
-
         fun getJarTask(classifier: String) =
             tasks.singleOrNull { it is Jar && it.name == "${classifier}Jar" }
                 ?: tasks.firstOrNull { it is Jar && it.archiveClassifier.get() == classifier }
@@ -343,6 +296,22 @@ class MavenCentralPublishPlugin : Plugin<Project> {
             }
             ext.pomConfigurators.forEach {
                 it.execute(pom)
+            }
+        }
+    }
+
+    companion object {
+        const val PLUGIN_ID: String = "me.him188.maven-central-publish"
+
+        inline fun Project.log(message: () -> String) {
+            if (logger.isInfoEnabled) {
+                logger.info("[MavenCentralPublish] " + message())
+            }
+        }
+
+        inline fun Project.log(level: LogLevel, message: () -> String) {
+            if (logger.isInfoEnabled) {
+                logger.log(level, "[MavenCentralPublish] " + message())
             }
         }
     }

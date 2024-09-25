@@ -37,7 +37,8 @@ dependencies {
     compileOnly(gradleApi())
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:${rootProject.extra.get("serialization")}")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:${rootProject.extra.get("serialization")}")
-    implementation("io.github.karlatemp:PublicationSign:1.3.41")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcpg-jdk18on:1.78.1")
 
     testImplementation(gradleApi())
     testImplementation(localGroovy())
@@ -65,6 +66,7 @@ tasks.getByName("shadowJar", ShadowJar::class) {
 }
 
 tasks.getByName("publishPlugins").dependsOn("shadowJar")
+tasks.getByName("publishToMavenLocal").dependsOn("shadowJar")
 
 gradlePlugin {
     website = "https://github.com/Him188/maven-central-publish"
@@ -85,6 +87,6 @@ kotlin.target.compilations.all {
     kotlinOptions {
         freeCompilerArgs = freeCompilerArgs + "-Xjvm-default=all"
         freeCompilerArgs = freeCompilerArgs + "-Xopt-in=kotlin.RequiresOptIn"
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
 }

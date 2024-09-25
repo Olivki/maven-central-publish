@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
     kotlin("multiplatform")
+    kotlin("plugin.serialization")
 }
 
 kotlin {
@@ -10,7 +11,8 @@ kotlin {
     sourceSets {
         all {
             dependencies {
-                api(project(":maven-central-publish-protocol"))
+                api("org.jetbrains.kotlinx:kotlinx-serialization-core:${extra.get("serialization")}")
+                api("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:${extra.get("serialization")}")
             }
         }
     }

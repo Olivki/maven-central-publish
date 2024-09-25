@@ -7,7 +7,7 @@ plugins {
 }
 
 allprojects {
-    group = "me.him188"
+    group = "net.ormr"
     description = "Configure publication to Maven Central for Gradle projects with minimal effort."
     version = rootProject.properties["version"].toString()
 
