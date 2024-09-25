@@ -1,5 +1,9 @@
 # maven-central-publish
 
+Fork of [Him188/maven-central-publish](https://github.com/Him188/maven-central-publish) with fixes from [Nambers](https://github.com/Nambers/maven-central-publish) to make it work with Gradle 8.x. Published under a new namespace.
+
+At the moment, the package namespaces are the same, so no change is required beyond replacing the plugin id, this might change in the future.
+
 Configure publication to Maven Central repository for Gradle projects with minimal effort.
 
 ## Why this plugin?
@@ -51,7 +55,7 @@ This enables users who can not access Gradle Metadata to add dependency using th
 
 ```kotlin
 plugins {
-    id("me.him188.maven-central-publish") version "1.0.0-dev-1"
+    id("net.ormr.maven-central-publish") version "0.1.0"
 }
 ```
 
